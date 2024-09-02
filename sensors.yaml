@@ -1,0 +1,165 @@
+esphome:
+  name: sensors_eth
+  friendly_name: Sensors
+  platformio_options:
+    board_build.flash_mode: dio
+  on_boot:
+    - delay: 2s
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret sensors_key
+
+ota:
+  - platform: esphome
+    password: !secret sensors_ota
+
+ethernet:
+  type: W5500
+  clk_pin: GPIO10
+  mosi_pin: GPIO12
+  miso_pin: GPIO11
+  cs_pin: GPIO9
+  interrupt_pin: GPIO13
+  reset_pin: GPIO14
+
+i2c:
+  - id: bus_a
+    sda: GPIO2
+    scl: GPIO1
+    scan: true
+  - id: bus_b
+    sda: GPIO6
+    scl: GPIO7
+    scan: true
+
+uart:
+  tx_pin: GPIO18
+  rx_pin: GPIO17
+  baud_rate: 256000
+  parity: NONE
+  stop_bits: 1
+
+output:
+  - platform: ledc
+    pin: GPIO21
+    id: buzzer_output
+
+switch:
+  - platform: template
+    name: "sensor_buzzer"
+    optimistic: true
+    turn_on_action:
+      - output.turn_on: buzzer_output
+      - output.ledc.set_frequency:
+          id: buzzer_output
+          frequency: "2441Hz"
+      - output.set_level:
+          id: buzzer_output
+          level: "100%"
+    turn_off_action:
+      - output.turn_off: buzzer_output 
+
+sensor:
+  - platform: scd4x
+    i2c_id: bus_a
+    co2:
+      name: "SCD40 CO2"
+    temperature:
+      name: "SCD40 Temperature"
+    humidity:
+      name: "SCD40 Humidity"
+    temperature_offset: 0
+    update_interval: 1s
+  - platform: bh1750
+    i2c_id: bus_a
+    name: "BH1750 Illuminance"
+    address: 0x23
+    update_interval: 5s
+    id: "bh1750_illuminance"
+  - platform: ens210
+    i2c_id: bus_b
+    temperature:
+      name: "ENS210 Temperature"
+    humidity:
+      name: "ENS210 Humidity"
+    update_interval: 5s
+  - platform: bme280_i2c
+    i2c_id: bus_b
+    address: 0x76
+    temperature:
+      name: "BME280 Temperature"
+    pressure:
+      name: "BME280 Pressure"
+    humidity:
+      name: "BME280 Humidity"
+    update_interval: 5s
+  - platform: bme680
+    i2c_id: bus_a
+    temperature:
+      name: "BME680 Temperature"
+      oversampling: 2x
+    pressure:
+      name: "BME680 Pressure"
+      oversampling: 16x
+    humidity:
+      id: "humidity"
+      name: "BME680 Humidity"
+      oversampling: 1x
+    gas_resistance:
+      id: "gas_resistance"
+      name: "BME680 Gas Resistance"
+    address: 0x76
+    heater:
+      temperature: 300
+      duration: 100ms 
+    update_interval: 1s
+  - platform: template
+    name: "BME680 Air Quality"
+    id: iaq
+    icon: "mdi:gauge"
+    # caulculation: comp_gas = log(R_gas[ohm]) + 0.04 log(Ohm)/%rh * hum[%rh]
+    lambda: |-
+      return log(id(gas_resistance).state) + 0.04 * id(humidity).state;
+
+text_sensor:
+  - platform: template
+    name: "BME680 Sensor IAQ Classification"
+    icon: "mdi:checkbox-marked-circle-outline"
+    lambda: |-
+      if (int(id(iaq).state) <= 50) {
+        return {"Excellent"};
+      }
+      else if (int(id(iaq).state) <= 100) {
+        return {"Good"};
+      }
+      else if (int(id(iaq).state) <= 150) {
+        return {"Lightly polluted"};
+      }
+      else if (int(id(iaq).state) <= 200) {
+        return {"Moderately polluted"};
+      }
+      else if (int(id(iaq).state) <= 250) {
+        return {"Heavily polluted"};
+      }
+      else if (int(id(iaq).state) <= 350) {
+        return {"Severely polluted"};
+      }
+      else if (int(id(iaq).state) <= 500) {
+        return {"Extremely polluted"};
+      }
+      else {
+        return {"unknown"};
+      }
